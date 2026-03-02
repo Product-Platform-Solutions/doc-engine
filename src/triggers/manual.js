@@ -1,127 +1,85 @@
 const express = require('express');
-const { writeJournal }        = require('../writers/journal');
-const { writeChangelog }      = require('../writers/changelog');
-const { writeIncidentReport } = require('../writers/incident-report');
-const { updateDoc }           = require('../writers/doc-updater');
+const { writeJournal }          = require('../writers/journal');
+const { writeChangelog }        = require('../writers/changelog');
+const { writeIncident }         = require('../writers/incident-report');
+const { updateDoc }             = require('../writers/doc-updater');
+const { syncRoadmap }           = require('../writers/roadmap-sync');
+const { fullSync }              = require('../publishers/confluence-sync');
+const { analyzeAndPlanUpdates } = require('../intelligence/analyzer');
 
 const router = express.Router();
-router.use(express.json());
 
 function auth(req, res, next) {
-  const key = process.env.DOC_ENGINE_API_KEY;
-  if (!key) return next();
-  const provided = req.headers['x-api-key'] ?? req.query.key;
-  if (provided !== key) return res.status(401).json({ error: 'Invalid API key' });
+  if (req.path === '/health') return next();
+  const key = req.headers['x-api-key'];
+  if (key !== process.env.DOC_ENGINE_API_KEY) return res.status(401).json({ error: 'Invalid API key' });
   next();
 }
 
-// ─── Health ────────────────────────────────────────────────────────────────
+router.use(auth);
 
-router.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'doc-engine',
-    version: '1.0.0',
-    timestamp: new Date().toISOString(),
+router.get('/health', (req, res) => res.json({ status: 'ok', service: 'doc-engine', version: '2.0.0', timestamp: new Date().toISOString() }));
+
+router.post('/journal', async (req, res) => {
+  try {
+    const date = req.body?.date ? new Date(req.body.date) : new Date();
+    const sessionNotes = req.body?.session_notes ?? '';
+    const result = await writeJournal(date, [], sessionNotes);
+    if (!result) return res.json({ status: 'skipped', reason: 'No activity found' });
+    res.json({ status: 'ok', ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/changelog', async (req, res) => {
+  try {
+    const result = await writeChangelog(req.body ?? {});
+    if (!result) return res.json({ status: 'skipped', reason: 'No commits found' });
+    res.json({ status: 'ok', ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/incident', async (req, res) => {
+  try {
+    const result = await writeIncident(req.body);
+    res.json({ status: 'ok', ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/doc', async (req, res) => {
+  try {
+    const { docPath, changeDesc, context } = req.body ?? {};
+    if (!docPath || !changeDesc) return res.status(400).json({ error: 'docPath and changeDesc required' });
+    const result = await updateDoc({ docPath, changeDesc, context });
+    res.json({ status: 'ok', ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/roadmap', async (req, res) => {
+  try {
+    const { sessionNotes, commits, repo } = req.body ?? {};
+    const result = await syncRoadmap({ sessionNotes: sessionNotes ?? '', commits: commits ?? [], repo: repo ?? '' });
+    if (!result) return res.json({ status: 'skipped', reason: 'No changes needed' });
+    res.json({ status: 'ok', ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/sync', async (req, res) => {
+  res.json({ status: 'started', message: 'Full Confluence sync running in background — may take several minutes' });
+  setImmediate(async () => {
+    try {
+      const result = await fullSync();
+      console.log(`[manual] Full sync complete: ${result.success.length} ok, ${result.failed.length} failed`);
+    } catch (err) { console.error('[manual] Full sync error:', err.message); }
   });
 });
 
-// ─── Journal ───────────────────────────────────────────────────────────────
-
-router.post('/journal', auth, async (req, res) => {
+router.post('/analyze', async (req, res) => {
   try {
-    const date = req.body?.date ? new Date(req.body.date) : new Date();
-    const docUpdates = req.body?.doc_updates ?? [];
-    const sessionNotes = req.body?.session_notes ?? '';
-    const result = await writeJournal(date, docUpdates, sessionNotes);
-    if (!result) return res.json({ status: 'skipped', reason: 'No activity found' });
-    res.json({ status: 'ok', ...result });
-  } catch (err) {
-    console.error('[manual] Journal error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── Changelog ─────────────────────────────────────────────────────────────
-
-router.post('/changelog', auth, async (req, res) => {
-  try {
-    const payload = req.body;
-    if (!payload.repository?.name && !payload.repo) {
-      return res.status(400).json({ error: 'Missing repo name' });
-    }
-    if (payload.repo && !payload.repository) {
-      payload.repository = { name: payload.repo, owner: { login: process.env.GITHUB_ORG ?? 'Product-Platform-Solutions' } };
-      payload.ref = `refs/heads/${payload.branch ?? 'main'}`;
-    }
-    const result = await writeChangelog(payload);
-    res.json({ status: 'ok', ...result });
-  } catch (err) {
-    console.error('[manual] Changelog error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── Incident ──────────────────────────────────────────────────────────────
-
-router.post('/incident', auth, async (req, res) => {
-  try {
-    const payload = req.body;
-    if (!payload.service || !payload.pattern) {
-      return res.status(400).json({ error: 'Missing service or pattern' });
-    }
-    const result = await writeIncidentReport(payload);
-    res.json({ status: 'ok', ...result });
-  } catch (err) {
-    console.error('[manual] Incident error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── Doc Update ────────────────────────────────────────────────────────────
-// Update a specific documentation file AND optionally record it in today's journal.
-//
-// Body:
-// {
-//   "doc_path": "docs/00-project-overview/vision.md",
-//   "change_desc": "Add doc-engine to the platform products table",
-//   "new_content": "...",   // optional — if omitted Groq generates the update
-//   "context": "...",       // optional extra context for Groq
-//   "add_to_journal": true  // optional — also write/update today's journal entry
-// }
-
-router.post('/doc', auth, async (req, res) => {
-  try {
-    const { doc_path, change_desc, new_content, context, add_to_journal = true } = req.body;
-
-    if (!doc_path || !change_desc) {
-      return res.status(400).json({ error: 'Missing doc_path or change_desc' });
-    }
-
-    // Update the doc
-    const docResult = await updateDoc({
-      docPath: doc_path,
-      changeDesc: change_desc,
-      newContent: new_content,
-      context,
-    });
-
-    let journalResult = null;
-
-    // Optionally fold into today's journal
-    if (add_to_journal) {
-      journalResult = await writeJournal(new Date(), [docResult]);
-    }
-
-    res.json({
-      status: 'ok',
-      doc: docResult,
-      journal: journalResult,
-    });
-  } catch (err) {
-    console.error('[manual] Doc update error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
+    const { repo, branch, commits, sessionNotes } = req.body ?? {};
+    if (!commits?.length) return res.status(400).json({ error: 'commits array required' });
+    const updates = await analyzeAndPlanUpdates({ repo: repo ?? '', branch: branch ?? 'develop', commits, sessionNotes });
+    res.json({ status: 'ok', updates });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

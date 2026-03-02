@@ -72,22 +72,45 @@ function buildActivitySummary(repoData) {
   return lines.join('\n');
 }
 
+
 function sanitizeMarkdown(raw) {
-  // Strip wrapping code fences if Groq added them
+  // Strip wrapping code fences
   raw = raw.replace(/^```(?:markdown|md)?\n/, '').replace(/\n```$/, '').trim();
-  if (!raw.startsWith('---')) {
-    console.warn('[journal] Missing frontmatter opener');
-    return raw;
+  if (!raw.startsWith('---')) return raw;
+
+  // Split into lines and find where the frontmatter fields end
+  const lines = raw.split('\n');
+  let inFrontmatter = false;
+  let frontmatterClosed = false;
+  let insertAt = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (i === 0 && lines[i].trim() === '---') {
+      inFrontmatter = true;
+      continue;
+    }
+    if (inFrontmatter) {
+      if (lines[i].trim() === '---') {
+        frontmatterClosed = true;
+        break;
+      }
+      // If we hit a blank line or non-YAML content before closing ---, that's the problem
+      if (lines[i].trim() === '' || (!/^[\w-]+:/.test(lines[i]) && !lines[i].startsWith(' ') && !lines[i].startsWith('-'))) {
+        insertAt = i;
+        break;
+      }
+    }
   }
-  // Ensure frontmatter is closed
-  const second = raw.indexOf('---', 3);
-  if (second === -1) {
-    console.warn('[journal] Missing frontmatter closer — fixing');
-    const firstBlank = raw.indexOf('\n\n');
-    return raw.slice(0, firstBlank) + '\n---' + raw.slice(firstBlank);
+
+  if (!frontmatterClosed && insertAt !== -1) {
+    console.warn('[sanitize] Inserting missing frontmatter closer at line', insertAt);
+    lines.splice(insertAt, 0, '---');
+    return lines.join('\n');
   }
+
   return raw;
 }
+
 
 /**
  * Write a journal blog post.
