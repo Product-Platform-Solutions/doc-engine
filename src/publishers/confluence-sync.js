@@ -84,3 +84,23 @@ async function fullSync() {
 }
 
 module.exports = { fullSync, incrementalSync, syncFile };
+
+// Override syncFile for blog posts — use blog post API instead of regular pages
+const { publishBlogPost } = require('./confluence');
+const _origSyncFile = syncFile;
+
+async function syncBlogFile(filePath, content) {
+  const pageTitle = extractPageTitle(content, filePath);
+  // Extract date from filename e.g. 2026-03-02-dev-journal.md
+  const dateMatch = filePath.match(/(\d{4}-\d{2}-\d{2})/);
+  const postingDay = dateMatch ? dateMatch[1] : new Date().toISOString().slice(0, 10);
+  try {
+    const url = await publishBlogPost({ content, pageTitle, postingDay });
+    return { filePath, pageTitle, url };
+  } catch (err) {
+    console.error(`[confluence-sync] Blog post sync failed ${filePath}: ${err.message}`);
+    return null;
+  }
+}
+
+module.exports = { fullSync, incrementalSync, syncFile };

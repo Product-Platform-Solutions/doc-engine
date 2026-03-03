@@ -1,8 +1,7 @@
-const { publishDoc }          = require('./github');
-const { publishToConfluence } = require('./confluence');
+const { publishDoc }                       = require('./github');
+const { publishToConfluence, publishBlogPost } = require('./confluence');
 
 const CONFLUENCE_SECTIONS = {
-  journal:   'Dev Journal',
   changelog: 'Changelogs',
   incident:  'Incidents',
   doc:       'Documentation',
@@ -10,6 +9,7 @@ const CONFLUENCE_SECTIONS = {
 
 async function publishAll({ path, content, message, type = 'doc', pageTitle }) {
   const results = {};
+
   try {
     results.github = await publishDoc({ path, content, message });
     console.log(`[publisher] GitHub: ${results.github}`);
@@ -17,11 +17,22 @@ async function publishAll({ path, content, message, type = 'doc', pageTitle }) {
     console.error(`[publisher] GitHub failed: ${err.message}`);
     results.github = null;
   }
-  const confluenceEnabled = !!(process.env.CONFLUENCE_BASE_URL && process.env.CONFLUENCE_EMAIL && process.env.CONFLUENCE_API_TOKEN);
+
+  const confluenceEnabled = !!(
+    process.env.CONFLUENCE_BASE_URL &&
+    process.env.CONFLUENCE_EMAIL &&
+    process.env.CONFLUENCE_API_TOKEN
+  );
+
   if (confluenceEnabled) {
     try {
-      const section = CONFLUENCE_SECTIONS[type] ?? 'Documentation';
-      results.confluence = await publishToConfluence({ content, section, pageTitle });
+      if (type === 'journal') {
+        // Use native Confluence blog post API for journals
+        results.confluence = await publishBlogPost({ content, pageTitle });
+      } else {
+        const section = CONFLUENCE_SECTIONS[type] ?? 'Documentation';
+        results.confluence = await publishToConfluence({ content, section, pageTitle });
+      }
     } catch (err) {
       console.error(`[publisher] Confluence failed: ${err.message}`);
       results.confluence = null;
@@ -30,6 +41,7 @@ async function publishAll({ path, content, message, type = 'doc', pageTitle }) {
     console.log('[publisher] Confluence not configured — skipping');
     results.confluence = null;
   }
+
   return results;
 }
 

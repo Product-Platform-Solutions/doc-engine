@@ -111,4 +111,71 @@ async function publishToConfluence({ content, section, pageTitle }) {
   }
 }
 
-module.exports = { publishToConfluence };
+
+/**
+ * Publish content as a Confluence Blog Post (appears in the native blog section).
+ * Used for dev journals and session posts.
+ */
+async function publishBlogPost({ content, pageTitle, postingDay }) {
+  const baseUrl  = process.env.CONFLUENCE_BASE_URL;
+  const email    = process.env.CONFLUENCE_EMAIL;
+  const apiToken = process.env.CONFLUENCE_API_TOKEN;
+  const spaceKey = process.env.CONFLUENCE_SPACE_KEY || 'PPS';
+
+  if (!baseUrl || !email || !apiToken) {
+    console.warn('[confluence] Missing config — skipping blog post publish');
+    return null;
+  }
+
+  const auth  = Buffer.from(`${email}:${apiToken}`).toString('base64');
+  const title = pageTitle ?? extractTitle(content);
+  const body  = markdownToConfluence(content);
+  const date  = postingDay ?? new Date().toISOString().slice(0, 10);
+
+  // Check if blog post with this title already exists
+  const res = await fetch(
+    `${CONFLUENCE_API(baseUrl)}/content?type=blogpost&spaceKey=${spaceKey}&title=${encodeURIComponent(title)}&expand=version`,
+    { headers: { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' } }
+  );
+  const existing = res.ok ? (await res.json()).results?.[0] : null;
+
+  if (existing) {
+    // Update existing blog post
+    const newVersion = (existing.version?.number ?? 1) + 1;
+    const updateRes = await fetch(`${CONFLUENCE_API(baseUrl)}/content/${existing.id}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        type: 'blogpost',
+        title,
+        version: { number: newVersion },
+        body: { storage: { value: body, representation: 'storage' } },
+      }),
+    });
+    if (!updateRes.ok) { const err = await updateRes.text(); throw new Error(`Blog post update failed: ${err}`); }
+    const data = await updateRes.json();
+    const url = `${baseUrl}/wiki${data._links?.webui ?? ''}`;
+    console.log(`[confluence] Blog post updated: ${url}`);
+    return url;
+  } else {
+    // Create new blog post
+    const createRes = await fetch(`${CONFLUENCE_API(baseUrl)}/content`, {
+      method: 'POST',
+      headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        type: 'blogpost',
+        title,
+        space: { key: spaceKey },
+        metadata: { properties: { 'posting-day': { value: date, key: 'posting-day' } } },
+        body: { storage: { value: body, representation: 'storage' } },
+      }),
+    });
+    if (!createRes.ok) { const err = await createRes.text(); throw new Error(`Blog post create failed: ${err}`); }
+    const data = await createRes.json();
+    const url = `${baseUrl}/wiki${data._links?.webui ?? ''}`;
+    console.log(`[confluence] Blog post created: ${url}`);
+    return url;
+  }
+}
+
+module.exports = { publishToConfluence, publishBlogPost };
