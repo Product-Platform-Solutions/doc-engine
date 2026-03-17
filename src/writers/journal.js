@@ -141,15 +141,19 @@ STRUCTURE:
 
 CRITICAL FORMAT RULES:
 - Start with --- on line 1
-- Frontmatter must close with --- on its own line before any content
-- tags MUST be a YAML array: tags: [tag1, tag2]
-- Only use tags from: github, keycloak, setup, aws, traefik, https, react, auto-tracker, n8n, groq, github-actions, automation, doc-engine, journal, iam-platform, ai-debug-agent, platform-docs, incident, mfa, scim, ldap, confluence, docusaurus
-- authors must be exactly: authors: [ananga]
+- Frontmatter fields MUST include: slug, title, authors, tags, date
 - slug format: dev-journal-YYYY-MM-DD
-- Write a compelling title like "Day N: Short punchy description of the main challenge"
-- One punchy summary sentence IMMEDIATELY after the frontmatter closing ---, then <!-- truncate --> on the next line
-- The rest of the journal comes AFTER <!-- truncate -->
-- <!-- truncate --> must appear after the summary sentence
+- date format: YYYY-MM-DD (e.g. date: 2026-03-17)
+- title MUST include the day number and a punchy description of the main challenge
+  Good examples: "Day 12: Wrestling with Atlassian Auth", "Day 7: The Infinite Loop That Ate the Server"
+  Bad examples: "Dev Journal 2026-03-17", "Day 12: Enhancing the Doc Engine"
+- authors must be exactly: authors: [ananga]
+- tags MUST be a YAML array using only: github, keycloak, setup, aws, traefik, https, react, auto-tracker, n8n, groq, github-actions, automation, doc-engine, journal, iam-platform, ai-debug-agent, platform-docs, incident, mfa, scim, ldap, confluence, docusaurus, docker, nginx, pm2, oauth, cloudflare, atlassian
+- Frontmatter MUST close with --- on its own line
+- IMMEDIATELY after the closing ---, write ONE punchy hook sentence (1-2 sentences max) that teases the main story
+- Then on the very next line write exactly: <!-- truncate -->
+- The full journal narrative (800-1200 words) comes AFTER <!-- truncate -->
+- NEVER put <!-- truncate --> at the bottom or anywhere except right after the hook sentence
 
 WHAT MAKES A GREAT JOURNAL ENTRY:
 - Specific error messages and how they were diagnosed
