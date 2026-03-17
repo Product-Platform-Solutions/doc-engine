@@ -73,6 +73,12 @@ function buildActivitySummary(repoData) {
 
 function sanitizeMarkdown(raw) {
   raw = raw.replace(/^```(?:markdown|md)?\n/, '').replace(/\n```$/, '').trim();
+
+  // Convert multiline YAML tags to inline array
+  raw = raw.replace(/^tags:\n((?:  - .+\n?)+)/m, (match, tagBlock) => {
+    const tags = tagBlock.trim().split('\n').map(t => t.replace(/^  - /, '').trim());
+    return `tags: [${tags.join(', ')}]\n`;
+  });
   if (!raw.startsWith('---')) return raw;
   const lines = raw.split('\n');
   let inFrontmatter = false;
