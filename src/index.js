@@ -3,6 +3,7 @@ const express = require('express');
 const { startScheduler } = require('./triggers/scheduler');
 const app = express();
 const PORT = process.env.PORT ?? 3002;
+app.use(express.json());
 app.use('/webhook', require('./triggers/webhook'));
 app.use('/trigger', require('./triggers/manual'));
 app.get('/', (_req, res) => res.json({

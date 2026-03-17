@@ -21,7 +21,6 @@ async function fetchNextDayNumber() {
     const m = f.name.match(/session-(\d+)/);
     if (m) max = Math.max(max, parseInt(m[1]));
   }
-  // Check dev-journal files for Day N in title
   const journalFiles = files.filter(f => f.name.includes('dev-journal'));
   for (const f of journalFiles) {
     const r = await fetch(
@@ -72,55 +71,30 @@ function buildActivitySummary(repoData) {
   return lines.join('\n');
 }
 
-
 function sanitizeMarkdown(raw) {
-  // Strip wrapping code fences
   raw = raw.replace(/^```(?:markdown|md)?\n/, '').replace(/\n```$/, '').trim();
   if (!raw.startsWith('---')) return raw;
-
-  // Split into lines and find where the frontmatter fields end
   const lines = raw.split('\n');
   let inFrontmatter = false;
   let frontmatterClosed = false;
   let insertAt = -1;
-
   for (let i = 0; i < lines.length; i++) {
-    if (i === 0 && lines[i].trim() === '---') {
-      inFrontmatter = true;
-      continue;
-    }
+    if (i === 0 && lines[i].trim() === '---') { inFrontmatter = true; continue; }
     if (inFrontmatter) {
-      if (lines[i].trim() === '---') {
-        frontmatterClosed = true;
-        break;
-      }
-      // If we hit a blank line or non-YAML content before closing ---, that's the problem
+      if (lines[i].trim() === '---') { frontmatterClosed = true; break; }
       if (lines[i].trim() === '' || (!/^[\w-]+:/.test(lines[i]) && !lines[i].startsWith(' ') && !lines[i].startsWith('-'))) {
-        insertAt = i;
-        break;
+        insertAt = i; break;
       }
     }
   }
-
   if (!frontmatterClosed && insertAt !== -1) {
     console.warn('[sanitize] Inserting missing frontmatter closer at line', insertAt);
     lines.splice(insertAt, 0, '---');
     return lines.join('\n');
   }
-
   return raw;
 }
 
-
-/**
- * Write a journal blog post.
- *
- * @param {Date}   date         - Date for the journal (defaults to today)
- * @param {Array}  docUpdates   - Doc files updated today [{path, summary}]
- * @param {string} sessionNotes - Raw notes / conversation summary from the session.
- *                                When provided, this is the PRIMARY source.
- *                                GitHub activity becomes supplementary context only.
- */
 async function writeJournal(date, docUpdates = [], sessionNotes = '') {
   const today = date ?? new Date();
   const dateStr = today.toISOString().slice(0, 10);
@@ -144,107 +118,66 @@ async function writeJournal(date, docUpdates = [], sessionNotes = '') {
     ? `\nDoc updates made today:\n${docUpdates.map(d => `- ${d.path}: ${d.summary}`).join('\n')}`
     : '';
 
-  const systemPrompt = `You are a technical writer for an open source platform project called Product Platform Solutions, built by Ananga M Chatterjee.
+  const systemPrompt = `You are writing a dev journal for an open source platform project called Product Platform Solutions, built by Ananga M Chatterjee — a solo platform engineer.
 
-You write daily dev journal blog posts that are published on the project's Docusaurus site.
+This journal is published publicly on the project's docs site. It should read like a senior engineer reflecting on their day — honest, specific, narrative. Think of it as a combination of a war story and a technical log. People reading this should feel like they were in the room.
 
-Here are two example posts to match exactly in style and format:
+TONE AND STYLE:
+- Write in first person, past tense
+- Conversational but technically precise
+- Tell the story of what happened — not a summary of outcomes
+- Include the messy details: what you tried that didn't work, what confused you, the moment something clicked
+- Name specific tools, commands, error messages, API endpoints where relevant
+- Explain the reasoning behind decisions — not just what was decided but why
+- If something was frustrating, say so. If something was surprisingly elegant, say so.
+- Do NOT use corporate speak. Never write "leveraged" or "utilized" or "streamlined"
 
-EXAMPLE 1:
----
-slug: session-1-foundation
-title: "Day 1: Building the Foundation"
-authors: [ananga]
-tags: [github, keycloak, setup]
----
-
-Started from absolute zero. The goal: build an enterprise-grade IAM platform using only open source tools at zero cost.
-
-<!-- truncate -->
-
-## What We Did
-
-Started from absolute zero. The goal: build an enterprise-grade IAM platform using only open source tools at zero cost.
-
-### Accomplished
-- Created GitHub organization
-- Deployed Keycloak 23.0 with PostgreSQL backend
-- Verified SSO login working
-
-### Key Decisions
-- Chose Keycloak over Authentik — more complete enterprise feature set
-- Used Docker Compose over bare metal — reproducible, portable
-
-### Issues Encountered
-- Gitpod ran out of OCU credits mid-session
-- Migrated to GitHub Codespaces
-
-### Next Session
-- MFA in Keycloak
-- SCIM provisioning
-
-EXAMPLE 2:
----
-slug: session-3-auto-tracker
-title: "Day 3: Building the Auto-Tracker"
-authors: [ananga]
-tags: [auto-tracker, groq, github-actions, automation]
----
-
-Built a complete automated ticket tracking system from scratch.
-
-<!-- truncate -->
-
-## What We Did
-
-Built a complete automated ticket tracking system from scratch.
-
-### Accomplished
-- Built GitHub Actions tracker workflow
-- Integrated Groq for AI enrichment
-- Set up PM2 for process management
-
-### Issues Encountered
-- Groq model deprecated — updated to current version
-- GitHub Actions SSL cert issue — fixed with -k flag
-
-### Next Session
-- MFA in Keycloak
-- LDAP federation
+STRUCTURE:
+- Start with a strong opening paragraph that sets the scene for the day — what was the main challenge or goal?
+- Then tell the story chronologically — what happened first, what that led to, what broke, how it got fixed
+- Use ## headers sparingly, only when genuinely shifting to a different topic
+- End with a short paragraph on what's next and any open questions
+- Aim for 800-1200 words — enough to tell the story properly, not padded
 
 CRITICAL FORMAT RULES:
 - Start with --- on line 1
-- frontmatter must close with --- on its own line before any content
+- Frontmatter must close with --- on its own line before any content
 - tags MUST be a YAML array: tags: [tag1, tag2]
-- Only use tags from: github, keycloak, setup, aws, traefik, https, react, auto-tracker, n8n, groq, github-actions, automation, doc-engine, journal, iam-platform, ai-debug-agent, platform-docs, incident, mfa, scim, ldap
+- Only use tags from: github, keycloak, setup, aws, traefik, https, react, auto-tracker, n8n, groq, github-actions, automation, doc-engine, journal, iam-platform, ai-debug-agent, platform-docs, incident, mfa, scim, ldap, confluence, docusaurus
 - authors must be exactly: authors: [ananga]
 - slug format: dev-journal-YYYY-MM-DD
-- One short summary sentence before <!-- truncate -->
+- Write a compelling title like "Day N: Short punchy description of the main challenge"
+- One punchy summary sentence IMMEDIATELY after the frontmatter closing ---, then <!-- truncate --> on the next line
+- The rest of the journal comes AFTER <!-- truncate -->
 - <!-- truncate --> must appear after the summary sentence
-- Sections: What We Did, Accomplished, Key Decisions, Issues Encountered, Documentation Updates (if any), Next Session
-- Skip sections that have nothing to add
-- Write in first person, specific and honest — not marketing speak
-- Keep under 600 words`;
+
+WHAT MAKES A GREAT JOURNAL ENTRY:
+- Specific error messages and how they were diagnosed
+- The actual commands that were run
+- The moment where something unexpected happened and how you responded
+- Decisions with tradeoffs explained — not just what was chosen
+- Honest reflection on what took longer than expected and why
+- Real timestamps or sequence of events when relevant`;
 
   const userPrompt = `Write the Day ${dayNumber} journal post for ${dateStr}.
 
-${sessionNotes ? `SESSION NOTES (primary source — this is what actually happened, write the journal based on this):\n${sessionNotes}` : ''}
+${sessionNotes ? `SESSION NOTES — this is what actually happened today. Write the journal as if you lived through this:\n\n${sessionNotes}` : ''}
 
-${activitySummary ? `GITHUB ACTIVITY (supplementary context):\n${activitySummary}` : ''}
+${activitySummary ? `GITHUB ACTIVITY (use as supporting detail, not the main story):\n${activitySummary}` : ''}
 ${docUpdatesSection}
 
-Use the session notes as the primary narrative. GitHub activity is just supporting data.
-Make it read like a real engineering session recap — specific about what broke, what was fixed, and why decisions were made.`;
+Write a full narrative journal entry of 800-1200 words. Tell the story of the day — the struggles, the debugging, the decisions, the wins. Make it read like a human wrote it after a long day of engineering work.`;
 
   console.log('[journal] Calling Groq...');
-  const raw = await ask(systemPrompt, userPrompt, 1500);
+  const raw = await ask(systemPrompt, userPrompt, 3000);
   const markdown = sanitizeMarkdown(raw);
 
   const path = `blog/${dateStr}-dev-journal.md`;
   const urls = await publishAll({
     path,
     content: markdown,
-    message: `blog(journal): day ${dayNumber} dev journal ${dateStr} [doc-engine]`, type: 'journal',
+    message: `blog(journal): day ${dayNumber} dev journal ${dateStr} [doc-engine]`,
+    type: 'journal',
   });
 
   console.log('[journal] Published:', urls);
