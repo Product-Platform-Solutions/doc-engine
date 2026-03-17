@@ -95,16 +95,17 @@ function sanitizeMarkdown(raw) {
   return raw;
 }
 
-async function writeJournal(date, docUpdates = [], sessionNotes = '') {
+async function writeJournal(date, docUpdates = [], sessionNotes = '', dayNumberOverride = null) {
   const today = date ?? new Date();
   const dateStr = today.toISOString().slice(0, 10);
 
   console.log(`[journal] Fetching day number and activity for ${dateStr}...`);
-  const [dayNumber, repoData] = await Promise.all([
+  let [dayNumber, repoData] = await Promise.all([
     fetchNextDayNumber(),
     Promise.all(REPOS.map(fetchTodayEvents)),
   ]);
 
+  if (dayNumberOverride) dayNumber = dayNumberOverride;
   console.log(`[journal] Day number: ${dayNumber}`);
   const activitySummary = buildActivitySummary(repoData);
   const hasContent = sessionNotes.trim() || activitySummary.trim() || docUpdates.length > 0;

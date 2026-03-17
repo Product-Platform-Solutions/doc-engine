@@ -24,7 +24,8 @@ router.post('/journal', async (req, res) => {
   try {
     const date = req.body?.date ? new Date(req.body.date) : new Date();
     const sessionNotes = req.body?.session_notes ?? '';
-    const result = await writeJournal(date, [], sessionNotes);
+    const dayNumberOverride = req.body?.day_number ?? null;
+    const result = await writeJournal(date, [], sessionNotes, dayNumberOverride);
     if (!result) return res.json({ status: 'skipped', reason: 'No activity found' });
     res.json({ status: 'ok', ...result });
   } catch (err) { res.status(500).json({ error: err.message }); }
