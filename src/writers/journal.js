@@ -76,7 +76,7 @@ function sanitizeMarkdown(raw) {
 
   // Convert multiline YAML tags to inline array
   raw = raw.replace(/^tags:\n((?:  - .+\n?)+)/m, (match, tagBlock) => {
-    const tags = tagBlock.trim().split('\n').map(t => t.replace(/^  - /, '').trim());
+    const tags = tagBlock.trim().split('\n').map(t => t.replace(/^\s*-\s*/, '').trim()).filter(t => t.length > 0);
     return `tags: [${tags.join(', ')}]\n`;
   });
   if (!raw.startsWith('---')) return raw;
